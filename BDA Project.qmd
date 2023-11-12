@@ -4,23 +4,8 @@ format: pdf
 editor: visual
 ---
 
-## Quarto
+## Introduction
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Esophageal cancer is cancer in the esophagus – the food pipe connecting the throat and the stomach. In recent years, esophageal cancer has been among the most common types of cancer: in 2018, it ranked 8th in the most diagnosed type of cancer globally, with 572,000 new cases. 
+Smoking and alcohol use has long been known as two major risk factors associated with esophageal cancer, and they are among the few risk factors that can be controlled or changed by the subject. The goal of this project is to utilize Bayesian modelling to the data from a case-control study of esophageal cancer in hopes of drawing a relation between a person’s level of tobacco and alcohol intake and their chance of developing esophageal cancer. 
 
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
-```
-
-You can add options to executable code like this
-
-```{r}
-#| echo: false
-2 * 2
-```
-
-The `echo: false` option disables the printing of code (only output is displayed).
