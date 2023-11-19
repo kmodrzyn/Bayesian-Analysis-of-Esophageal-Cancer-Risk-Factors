@@ -35,14 +35,8 @@ espoh
 ```
 
 ```{r}
-new <- read.csv("changed_espoh.csv", sep = ",")
+new <- read.csv("espoh/changed_espoh.csv", sep = ",")
 new
-df = c()
-for (i in 1:length(new))
-{
-  df = c(df, runif(new[,i]$ncases + new$ncontrols, min = new$))
-}
-
 ```
 
 ```{r}
@@ -84,6 +78,45 @@ barplot(pop_new$total/sum(pop_new$total))
 
 
 
+```{r}
+# Convert entire dataframe to numeric
+df <- data.frame(apply(new, 2, as.numeric))
+
+column_names <- c("Age", "Tobac", "Alco", "Has_cancer")
+new_df <- data.frame(matrix(ncol = length(column_names), nrow = 0))
+colnames(new_df) <- column_names
+
+for (i in 1:dim(df)[1]) {
+  for (j in 1:df[i, "ncases"]) {
+    age_sample <- ifelse(df[i, "age_high"] > 0, runif(1, df[i, "age_low"], df[i, "age_high"]), rexp(1, rate = 0.7) + df[i, "age_low"])
+    tob_sample <- ifelse(df[i, "tob_high"] > 0, runif(1, df[i, "tob_low"], df[i, "tob_high"]), rexp(1, rate = 0.01) + df[i, "tob_low"])
+    alc_sample <- ifelse(df[i, "alc_high"] > 0, runif(1, df[i, "alc_low"], df[i, "alc_high"]), rexp(1, rate = 0.01) + df[i, "alc_low"])
+    new_row = data.frame(
+      Age = age_sample,
+      Tobac = tob_sample,
+      Alco = alc_sample,
+      Has_cancer = 1
+    )
+    new_df <- rbind(new_df, new_row)
+  }
+  for (k in 1:df[i, "ncontrols"]) {
+    age_sample <- ifelse(df[i, "age_high"] > 0, runif(1, df[i, "age_low"], df[i, "age_high"]), rexp(1, rate = 0.7) + df[i, "age_low"])
+    tob_sample <- ifelse(df[i, "tob_high"] > 0, runif(1, df[i, "tob_low"], df[i, "tob_high"]), rexp(1, rate = 0.01) + df[i, "tob_low"])
+    alc_sample <- ifelse(df[i, "alc_high"] > 0, runif(1, df[i, "alc_low"], df[i, "alc_high"]), rexp(1, rate = 0.01) + df[i, "alc_low"])
+    new_row = data.frame(
+      Age = age_sample,
+      Tobac = tob_sample,
+      Alco = alc_sample,
+      Has_cancer = 0
+    )
+    new_df <- rbind(new_df, new_row)
+  }
+}
+
+# Display the resulting dataframe
+print(new_df)
+
+```
 
 
 
