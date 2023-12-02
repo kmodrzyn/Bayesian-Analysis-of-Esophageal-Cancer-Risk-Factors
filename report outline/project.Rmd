@@ -255,47 +255,146 @@ summary(model)
 
 From the summary we can learn that our model estimation converged well: $\hat{R}$ \~ 1.0 and effective sample size greater than 100 times the number of chains (=4) for each parameter (Vehtari et al. 2021) [1].
 
-### Posterior predictive checks
+# Hierarchical logistic regression model
 
-These first two plots are used for visualizing the overlay of posterior predictive densities on top of the observed data.
+In the hierarchical model, we will assume that each patient will inherently have a distinct tendency to have cancer. For example, depending on the patient's genes, the patient is either vulnerable or more resistant to cancer.
+
+### Priors and Likelihood:
+
+1.  **Priors**: We can use the flat priors for the coefficients and Student - T prior for each patient suggested by BRMS and then later test the prior sensitivity of the model.
 
 ```{r}
-pp_dens_1_model_1 <- pp_check(model, newdata = test_data)
-pp_dens_2_model_1 <- pp_check(model, type="dens_overlay_grouped", group="age", newdata = test_data)
-#pp_dens_2_model_1 + xaxis_title() + ggplot2::xlab("Model 1 grouped by age")
+#Examine the default priors suggested 
+get_prior(cancer ~ 1 + tob + alc + age + (1 | ID),               
+          data = train_data,               
+          family = bernoulli("logit"))
+```
+
+2.  **Likelihood**: The likelihood of observing the data given the parameters is modeled by a binomial distribution (for binary outcomes), which in the case of logistic regression simplifies to a product of Bernoulli trials.
+
+### BRMS code
+
+```{r}
+# Defining the ordinal logistic model 
+model2 <- brm(cancer ~ 1 + tob + alc + age + (1 | ID),              
+              data = train_data,               
+              family = bernoulli("logit"),              
+              prior = c(prior(normal(0, 10), class = "b"),                        
+                        prior(normal(0, 10), class = "Intercept")),              
+              chains=4,              
+              file="model2",              
+              cores=4)
+```
+
+The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. This are mostly default settings but, as we show below, the MCMC chains converge well.
+
+### Convergence diagnostic
+
+```{r}
+summary(model2)
+```
+
+From the summary we can learn that our model estimation converged well: $\hat{R}$ \~ 1.00 and effective sample size greater than 100 times the number of chains (=4) for each parameter (Vehtari et al. 2021) [1].
+
+# Posterior predictive checks
+
+These first two plots are used for visualizing the overlay of posterior predictive densities on top of the observed data. We placed both models next to each other to allow for easier model comparison.
+
+```{r}
+# Posterior predictive checks for the pooled model
+pp_dens_1_model_1 <- pp_check(model, newdata = test_data) + 
+  xaxis_title() + 
+  ggplot2::xlab("Pooled model")
+pp_dens_2_model_1 <- pp_check(model, type="dens_overlay_grouped", group="age", newdata = test_data) +
+  xaxis_title() +
+  xaxis_ticks(on = TRUE) +
+  xaxis_text(on = FALSE) + 
+  ggplot2::xlab("Pooled model grouped by age")
+# Posterior predictive checks for the hierarchical model
+pp_dens_1_model_2 <- pp_check(model2, newdata = test_data,
+                              allow_new_levels=TRUE,
+                              sample_new_levels="gaussian") +
+  xaxis_title() +
+  ggplot2::xlab("Hierarchical model")
+pp_dens_2_model_2 <- pp_check(model2, type="dens_overlay_grouped", group="age",
+                              newdata = test_data, allow_new_levels=TRUE,
+                              sample_new_levels="gaussian") +
+  xaxis_title() + 
+  xaxis_ticks(on = TRUE) +
+  xaxis_text(on = FALSE) + 
+  ggplot2::xlab("Hierarchical model grouped by age")
 
 ```
 
 ```{r}
 # Combine the plots
-grid.arrange(pp_dens_1_model_1, pp_dens_2_model_1, ncol = 2)
-```
-
-The next two plots displays two bars representing the observed counts of the two outcomes, with overlaid bars from the simulated data.
-
-```{r}
-pp_check(model, type="bars", newdata = test_data)
+grid.arrange(pp_dens_1_model_1, pp_dens_1_model_2, ncol = 2)
 ```
 
 ```{r}
-pp_check(model, type="bars_grouped", group="age", newdata = test_data)
+grid.arrange(pp_dens_2_model_1, pp_dens_2_model_2, ncol = 2)
 ```
 
-The final two plots show the observed mean statistic and a distritbution of the statistic computed from the simulated data set.
+The next three plots displays two bars representing the observed counts of the two outcomes, with overlaid bars from the simulated data.
 
 ```{r}
-pp_check(model, type="stat", newdata = test_data)
+pp_bar_model_1 <- pp_check(model, type="bars", newdata = test_data) + 
+  xaxis_title() + 
+  ggplot2::xlab("Pooled model")
+pp_bar_model_2 <- pp_check(model2, type="bars", newdata = test_data,
+                           allow_new_levels=TRUE,
+                           sample_new_levels="gaussian") +
+  xaxis_title() + 
+  ggplot2::xlab("Hierarchical model")
+grid.arrange(pp_bar_model_1, pp_bar_model_2)
 ```
 
 ```{r}
-pp_check(model, type="stat_grouped", group="age", newdata = test_data)
+pp_check(model, type="bars_grouped", group="age", newdata = test_data) + 
+  xaxis_title() + 
+  ggplot2::xlab("Pooled model")
 ```
 
-### Predictive performance assessments
+```{r}
+pp_check(model2, type="bars_grouped", group="age", 
+                                newdata = test_data,
+                                allow_new_levels=TRUE,
+                                sample_new_levels="gaussian") + 
+  xaxis_title() + 
+  ggplot2::xlab("Hierarchical model")
+```
+
+The final three plots show the observed mean statistic and a distribution of the statistic computed from the simulated data set.
+
+```{r}
+p_stat1 <- pp_check(model, type="stat", newdata = test_data) + 
+  xaxis_title() + 
+  ggplot2::xlab("Pooled model")
+p_stat2 <- pp_check(model2, type="stat", 
+                      newdata = test_data,
+                      allow_new_levels=TRUE,
+                      sample_new_levels="gaussian") + 
+  xaxis_title() + 
+  ggplot2::xlab("Hierarchical model")
+grid.arrange(p_stat1, p_stat2)
+```
+
+```{r}
+pp_check(model, type="stat_grouped", group="age", newdata = test_data) + 
+  xaxis_title() + 
+  ggplot2::xlab("Pooled model")
+```
+
+```{r}
+pp_check(model2, type="stat_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
+```
+
+# Predictive performance assessments
 
 Now we will make predictions on the Test Set.
 
 ```{r}
+# For pooled model:
 #Get posterior predictions for the test set
 posterior_predict_model1 <- posterior_predict(model, newdata=test_data)
 
@@ -303,6 +402,15 @@ posterior_predict_model1 <- posterior_predict(model, newdata=test_data)
 predicted_probabilities_model1 <- colMeans(posterior_predict_model1)
 
 predicted_classes_model1 <- ifelse(predicted_probabilities_model1 > 0.5, 1, 0)
+
+# For hierarchical model:
+#Get posterior predictions for the test set
+posterior_predict_model2 <- posterior_predict(model2, newdata=test_data, allow_new_levels=TRUE, sample_new_levels = "gaussian", cores=4)
+
+#Calculate the mean of the posterior predictions
+predicted_probabilities_model2 <- colMeans(posterior_predict_model2)
+
+predicted_classes_model2 <- ifelse(predicted_probabilities_model2 > 0.5, 1, 0)
 ```
 
 We can then construct a confusion matrix by comparing predictions to the actual outcomes in the test set.
@@ -315,8 +423,17 @@ actual_classes <- test_data$cancer
 
 #Create a confusion matrix
 conf_matrix_model1 <- table(Predicted = predicted_classes_model1, Actual = actual_classes)
+
+conf_matrix_model2 <- table(Predicted = predicted_classes_model2, Actual = actual_classes)
+conf_matrix_df_model2 <- as.data.frame(as.table(conf_matrix_model2))
+
+cat("Pooled model: \n")
 conf_matrix_model1
+cat("Hierarchical model: \n")
+conf_matrix_model2
 ```
+
+As we can see the performances of both models are practically the same in terms of classification accuracy.
 
 ```{r}
 conf_matrix_df_model1 <- as.data.frame(as.table(conf_matrix_model1))
