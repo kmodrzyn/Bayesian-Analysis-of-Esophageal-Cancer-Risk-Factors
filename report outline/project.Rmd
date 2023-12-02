@@ -1,6 +1,6 @@
 ---
 title: "Bayesian Hierarchical Analysis of Esophageal Cancer Risk Factors: Evaluating the Role of Age, Tobacco, and Alcohol Consumption"
-output: pdf_document
+output: html_document
 date: "2023-11-29"
 ---
 
@@ -21,8 +21,6 @@ Our data set was created by Tuyns AJ, Péquignot G, Jensen OM. in a paper *Esoph
 
 It was also used in a statistical book by *Breslow, N. E. and Day, N. E. (1980) Statistical Methods in Cancer Research. Volume 1: The Analysis of Case-Control Studies. IARC Lyon / Oxford University Press.* In the book, the data set was used to showcase statistical methods and techniques. There was also logistic regression performed on the data set. However, no Bayesian statistics was used as the book focuses on multiple regression models.
 
-::: {.content-hidden when-format="pdf"}
-::: {.callout-warning collapse="false"}
 ```{r, echo=FALSE, include=FALSE}
 #Import libraries
 
@@ -35,16 +33,18 @@ library(caret)
 library(caTools)
 library(reshape2)
 library(gridExtra)
+library(rstan)
 
 #For reproducibility
-set.seed(123)
+set.seed(932)
 
 # Globally specfiy cmdstan backend for brms
 options(brms.backend="cmdstanr")
 options(brms.file_refit="on_change")
+
+# Toggle 'bayesplot' color options
+color_scheme_set("brightblue")
 ```
-:::
-:::
 
 ```{r import_data, echo=FALSE}
 # Fetch the dataset
@@ -210,7 +210,9 @@ The logistic regression model can be expressed as follows:
 
 $$ \text{logit}(P(Y=1)) = \log\left(\frac{P(Y=1)}{1 - P(Y=1)}\right) = \beta_0 + \beta_1X_1 + \beta_2X_2 + \cdots + \beta_kX_k $$
 
-Where: - $P(Y=1)$ is the probability of having cancer. - $\beta_0$ is the intercept. - $\beta_1, \beta_2, \cdots, \beta_k$ are the coefficients for the explanatory variables $X_1, X_2, \cdots, X_k$ (age, tobacco, and alcohol consumption in your case). These parameter estimate will show the change in the log-odds of the outcome when the variable changes from its reference level (usually 0) to the other level. In practical terms, this parameter tells us the difference in the log-odds of the probability of having cancer.
+Where: - $P(Y=1)$ is the probability of having cancer.
+
+-   $\beta_0$ is the intercept. - $\beta_1, \beta_2, \cdots, \beta_k$ are the coefficients for the explanatory variables $X_1, X_2, \cdots, X_k$ (age, tobacco, and alcohol consumption in your case). These parameter estimate will show the change in the log-odds of the outcome when the variable changes from its reference level (usually 0) to the other level. In practical terms, this parameter tells us the difference in the log-odds of the probability of having cancer.
 
 # Pooled ordinal logistic regression model
 
@@ -220,7 +222,7 @@ Where: - $P(Y=1)$ is the probability of having cancer. - $\beta_0$ is the interc
 
 -   For the $\beta$ coefficients, a common choice is to use normal distributions as priors due to their mathematical convenience and the central limit theorem. For example, $\beta_i \sim \mathcal{N}(0, \sigma^2)$, where $\sigma^2$ is the variance. However, we can also use the flat priors suggested by BRMS and then later test the prior sensitivity of the model.
 
--   According to American Cancer Society, Age, Tobacco, and Alcohol are ones of the risk factors [2]. A risk factor is 'anything that increases your chance of getting the esophageal cancer'. But having a risk factor, or even many, does not mean that you will get the cancer. Therefore, one possible choice for the priors of the coefficients is $\beta_i \sim \mathcal{N}(0.2, 10)$, with a close-to-zero positive mean and a very big standard deviation for it to be a flat priors, resulting in a posterior mainly influenced by the data.
+-   According to American Cancer Society, Age, Tobacco, and Alcohol are ones of the risk factors [2]. A risk factor is 'anything that increases your chance of getting the esophageal cancer'. But having a risk factor, or even many, does not mean that you will get the cancer. Therefore, one possible choice for the priors of the coefficients is $\beta_i \sim \mathcal{N}(0.02, 10)$, with a close-to-zero positive mean and a very big standard deviation for it to be a flat priors, resulting in a posterior mainly influenced by the data.
 
 ```{r}
 #Examine the default priors suggested
@@ -233,15 +235,16 @@ get_prior(cancer ~ 1 + tob + alc + age,
 
 ### BRMS code
 
-```{r}
+```{r, include=FALSE}
 # Defining the ordinal logistic model
 model <- brm(cancer ~ 1 + tob + alc + age, 
              data = train_data, 
              family = bernoulli("logit"),
-             prior = c(prior(normal(0, 10), class = "b"), 
+             prior = c(prior(normal(0.02, 10), class = "b"), 
                        prior(normal(0, 10), class = "Intercept")),
              chains=4,
              file="model1",
+             backend="cmdstanr",
              cores=4)
 ```
 
@@ -249,40 +252,122 @@ The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. 
 
 ### Convergence diagnostic
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, include=FALSE}
 summary(model)
 ```
 
 From the summary we can learn that our model estimation converged well: $\hat{R}$ \~ 1.0 and effective sample size greater than 100 times the number of chains (=4) for each parameter (Vehtari et al. 2021) [1].
 
+```{r, echo=FALSE}
+np1 <- nuts_params(model)
+# extract the number of divergence transitions
+cat(sprintf("Number of divergence of the transitions: %i", sum(subset(np1, Parameter == "divergent__")$Value)))
+```
+
+Zero divergences indicates that the posterior distribution has been explored by the HMC algorithm.
+
+### Sensitivity Analysis with respect to Priors
+
+This time let use the default priors suggested by BRMS model.
+
+```{r, include=FALSE}
+model1_alt <- brm(cancer ~ 1 + tob + alc + age, 
+             data = train_data, 
+             family = bernoulli("logit"),
+             chains=4,
+             file="model1_alt",
+             backend="cmdstanr",
+             cores=4)
+```
+
+```{r, echo=FALSE, include=FALSE}
+# Extracting posterior samples
+posterior_samples_model1 <- as_draws(model)
+posterior_samples_model1_alt <- as_draws(model1_alt)
+```
+
+**Posterior of Tobacco's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_tob_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_tob_model1_alt <- mcmc_areas(posterior_samples_model1_alt, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_tob_model1, posterior_tob_model1_alt, ncol = 2)
+```
+
+**Posterior of Alcohol's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_alc_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_alc_model1_alt <- mcmc_areas(posterior_samples_model1_alt, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_alc_model1, posterior_alc_model1_alt, ncol = 2)
+```
+
+**Posterior of Age's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_age_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_age_model1_alt <- mcmc_areas(posterior_samples_model1_alt, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_age_model1, posterior_age_model1_alt, ncol = 2)
+```
+
+In conclusion, we can say that the model is rather indifferent to prior choices as there are no considerable differences between the posteriors of the parameters.
+
 # Hierarchical logistic regression model
 
-In the hierarchical model, we will assume that each patient will inherently have a distinct tendency to have cancer. For example, depending on the patient's genes, the patient is either vulnerable or more resistant to cancer.
+In the hierarchical model, we will assume that each patient will inherently have a distinct tendency to have cancer, accounting for patient-level variation. For example, depending on the patient's genes, the patient is either vulnerable or more resistant to cancer.
 
 ### Priors and Likelihood:
 
-1.  **Priors**: We can use the flat priors for the coefficients and Student - T prior for each patient suggested by BRMS and then later test the prior sensitivity of the model.
+1.  **Priors**: We can reuse the priors in the Pooled Model as well as priors suggested by BRMS, then test the Model's sensitivity to priors.
 
 ```{r}
 #Examine the default priors suggested 
 get_prior(cancer ~ 1 + tob + alc + age + (1 | ID),               
-          data = train_data,               
+    data = train_data,            
           family = bernoulli("logit"))
 ```
 
-2.  **Likelihood**: The likelihood of observing the data given the parameters is modeled by a binomial distribution (for binary outcomes), which in the case of logistic regression simplifies to a product of Bernoulli trials.
+2.  **Likelihood**: We will reuse the Bernoulli family as in the Pooled Model.
 
 ### BRMS code
 
-```{r}
+```{r, include=FALSE}
 # Defining the ordinal logistic model 
 model2 <- brm(cancer ~ 1 + tob + alc + age + (1 | ID),              
               data = train_data,               
               family = bernoulli("logit"),              
-              prior = c(prior(normal(0, 10), class = "b"),                        
+              prior = c(prior(normal(0.02, 10), class = "b"),                        
                         prior(normal(0, 10), class = "Intercept")),              
               chains=4,              
-              file="model2",              
+              file="model2", 
+              backend="cmdstanr",
               cores=4)
 ```
 
@@ -290,17 +375,98 @@ The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. 
 
 ### Convergence diagnostic
 
-```{r}
+```{r, echo=FALSE, include=FALSE}
 summary(model2)
 ```
 
 From the summary we can learn that our model estimation converged well: $\hat{R}$ \~ 1.00 and effective sample size greater than 100 times the number of chains (=4) for each parameter (Vehtari et al. 2021) [1].
 
+```{r, echo=FALSE}
+np2 <- nuts_params(model2)
+# extract the number of divergence transitions
+cat(sprintf("Number of divergence of the transitions: %i", sum(subset(np2, Parameter == "divergent__")$Value)))
+```
+
+Zero divergences indicates that the posterior distribution has been explored by the HMC algorithm.
+
+### Sensitivity Analysis with respect to Priors
+
+This time let use the default priors suggested by BRMS model.
+
+```{r, include=FALSE}
+model2_alt <- brm(cancer ~ 1 + tob + alc + age + (1 | ID),              
+              data = train_data,               
+              family = bernoulli("logit"),              
+              chains=4,              
+              file="model2_alt", 
+              backend="cmdstanr",
+              cores=4)
+```
+
+```{r, echo=FALSE, include=FALSE}
+# Extracting posterior samples
+posterior_samples_model2 <- as_draws(model2)
+posterior_samples_model2_alt <- as_draws(model2_alt)
+```
+
+**Posterior of Tobacco's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_tob_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_tob_model2_alt <- mcmc_areas(posterior_samples_model2_alt, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_tob_model2, posterior_tob_model2_alt, ncol = 2)
+```
+
+**Posterior of Alcohol's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_alc_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_alc_model2_alt <- mcmc_areas(posterior_samples_model2_alt, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_alc_model2, posterior_alc_model2_alt, ncol = 2)
+```
+
+**Posterior of Age's coefficient parameters:**
+
+```{r, echo=FALSE, include=FALSE}
+posterior_age_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Customized priors")
+
+posterior_age_model2_alt <- mcmc_areas(posterior_samples_model2_alt, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
+  xaxis_title() + 
+  ggplot2::xlab("Default priors")
+```
+
+```{r, echo=FALSE}
+# Combine the plots
+grid.arrange(posterior_age_model2, posterior_age_model2_alt, ncol = 2)
+```
+
+In conclusion, we can say that the model is rather sensitive to prior choices as there are some considerable differences between the posteriors of the parameters.
+
 # Posterior predictive checks
 
 These first two plots are used for visualizing the overlay of posterior predictive densities on top of the observed data. We placed both models next to each other to allow for easier model comparison.
 
-```{r}
+```{r, echo=FALSE, include=FALSE}
 # Posterior predictive checks for the pooled model
 pp_dens_1_model_1 <- pp_check(model, newdata = test_data) + 
   xaxis_title() + 
@@ -326,18 +492,18 @@ pp_dens_2_model_2 <- pp_check(model2, type="dens_overlay_grouped", group="age",
 
 ```
 
-```{r}
+```{r, echo=FALSE}
 # Combine the plots
 grid.arrange(pp_dens_1_model_1, pp_dens_1_model_2, ncol = 2)
 ```
 
-```{r}
+```{r, echo=FALSE}
 grid.arrange(pp_dens_2_model_1, pp_dens_2_model_2, ncol = 2)
 ```
 
 The next three plots displays two bars representing the observed counts of the two outcomes, with overlaid bars from the simulated data.
 
-```{r}
+```{r, echo=FALSE, include=FALSE}
 pp_bar_model_1 <- pp_check(model, type="bars", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
@@ -346,17 +512,24 @@ pp_bar_model_2 <- pp_check(model2, type="bars", newdata = test_data,
                            sample_new_levels="gaussian") +
   xaxis_title() + 
   ggplot2::xlab("Hierarchical model")
+```
+
+```{r, echo=FALSE}
 grid.arrange(pp_bar_model_1, pp_bar_model_2)
 ```
 
-```{r}
-pp_check(model, type="bars_grouped", group="age", newdata = test_data) + 
+```{r, echo=FALSE, include=FALSE}
+pp_bar_grouped_model_1 <- pp_check(model, type="bars_grouped", group="age", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
 ```
 
-```{r}
-pp_check(model2, type="bars_grouped", group="age", 
+```{r, echo=FALSE}
+pp_bar_grouped_model_1
+```
+
+```{r, echo=FALSE, include=FALSE}
+pp_bar_grouped_model_2 <- pp_check(model2, type="bars_grouped", group="age", 
                                 newdata = test_data,
                                 allow_new_levels=TRUE,
                                 sample_new_levels="gaussian") + 
@@ -364,9 +537,13 @@ pp_check(model2, type="bars_grouped", group="age",
   ggplot2::xlab("Hierarchical model")
 ```
 
+```{r, echo=FALSE}
+pp_bar_grouped_model_2
+```
+
 The final three plots show the observed mean statistic and a distribution of the statistic computed from the simulated data set.
 
-```{r}
+```{r, echo=FALSE, include=FALSE}
 p_stat1 <- pp_check(model, type="stat", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
@@ -376,24 +553,37 @@ p_stat2 <- pp_check(model2, type="stat",
                       sample_new_levels="gaussian") + 
   xaxis_title() + 
   ggplot2::xlab("Hierarchical model")
+```
+
+```{r, echo=FALSE}
 grid.arrange(p_stat1, p_stat2)
 ```
 
-```{r}
-pp_check(model, type="stat_grouped", group="age", newdata = test_data) + 
+```{r, echo=FALSE, include=FALSE}
+pp_stat_grouped_model_1 <- pp_check(model, type="stat_grouped", group="age", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
 ```
 
-```{r}
-pp_check(model2, type="stat_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
+```{r, echo=FALSE}
+pp_stat_grouped_model_1
 ```
+
+```{r, echo=FALSE}
+pp_stat_grouped_model_2 <- pp_check(model2, type="stat_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
+```
+
+```{r, echo=FALSE}
+pp_stat_grouped_model_2
+```
+
+**Conclusion**: We can see that the predicted data points following log-Bernoulli distribution has a similar distribution to the observed data, as both are bi-modal. However, from the grouped posterior, we can see that the predictions are not really good for some age group.
 
 # Predictive performance assessments
 
-Now we will make predictions on the Test Set.
+Now we will make predictions on the Test Set and then construct a confusion matrix by comparing predictions to the actual outcomes in the test set.
 
-```{r}
+```{r, echo=FALSE}
 # For pooled model:
 #Get posterior predictions for the test set
 posterior_predict_model1 <- posterior_predict(model, newdata=test_data)
@@ -413,11 +603,9 @@ predicted_probabilities_model2 <- colMeans(posterior_predict_model2)
 predicted_classes_model2 <- ifelse(predicted_probabilities_model2 > 0.5, 1, 0)
 ```
 
-We can then construct a confusion matrix by comparing predictions to the actual outcomes in the test set.
-
 **The Confusion Matrix:**
 
-```{r}
+```{r, echo=FALSE}
 #Actual classes in the test set
 actual_classes <- test_data$cancer
 
@@ -429,27 +617,24 @@ conf_matrix_df_model2 <- as.data.frame(as.table(conf_matrix_model2))
 
 cat("Pooled model: \n")
 conf_matrix_model1
+cat("\n")
 cat("Hierarchical model: \n")
 conf_matrix_model2
 ```
 
-As we can see the performances of both models are practically the same in terms of classification accuracy.
+Then we will evaluate the classification accuracy of both models using some of the common metrics: Accuracy, Precision, Recall, and F1 Score.
 
-```{r}
-conf_matrix_df_model1 <- as.data.frame(as.table(conf_matrix_model1))
+-   **Accuracy**: Accuracy measures how often a classifier makes the correct prediction. It is the ratio of the number of correct predictions to the total number of predictions.
 
-# Rename the columns appropriately
-names(conf_matrix_df_model1) <- c("Predicted", "Actual", "Frequency")
+-   **Precision**: Precision is the ratio of correctly predicted positive observations to the total predicted positive observations. It's a measure of a classifier's exactness. High precision relates to a low rate of false positives, and it is particularly important in cases where the cost of a false positive is high.
 
-ggplot(conf_matrix_df_model1, aes(x = Predicted, y = Actual, fill = Frequency)) +
-    geom_tile() +
-    scale_fill_gradient(low = "white", high = "steelblue") +
-    theme_minimal() +
-    labs(x = "Predicted", y = "Actual", fill = "Count") +
-    coord_fixed()
-```
+-   **Recall (or Sensitivity)**: Recall is the ratio of correctly predicted positive observations to all observations in the actual class. It's a measure of a classifier's completeness. High recall relates to a low rate of false negatives, and it is important in cases where the cost of a false negative is high.
 
-```{r}
+-   **F1 Score**: The F1 Score is the weighted average of Precision and Recall. It's a measure of a test's accuracy and considers both the precision and the recall. This is useful when seeking a balance between Precision and Recall, especially if there is an uneven class distribution.
+
+In medical diagnostics, these metrics play crucial roles in evaluating the performance of diagnostic tests or predictive models. However, for life-threatening diseases such as cancer, **recall (sensitivity)** is often prioritized to ensure that as many true cases as possible are identified. Missing a diagnosis in such cases could be fatal.
+
+```{r, echo=FALSE}
 
 true_positives_model1 <- conf_matrix_model1[2, 2]
 true_negatives_model1 <- conf_matrix_model1[1, 1]
@@ -461,120 +646,13 @@ precision_model1 <- true_positives_model1 / (true_positives_model1 + false_posit
 recall_model1 <- true_positives_model1 / (true_positives_model1 + false_negatives_model1)
 f1_score_model1 <- 2 * (precision_model1 * recall_model1) / (precision_model1 + recall_model1)
 
+cat("Pooled model: \n")
 cat(sprintf("Accuracy:    %.1f\nPrecision:   %.1f\nRecall:      %.1f\nF1 Score:    %.1f", 
     accuracy_model1, precision_model1, recall_model1, f1_score_model1))
 
 ```
 
-# Hierarchical logistic regression model
-
-In the hierarchical model, we will assume that each patient will inherently have a distinct tendency to have cancer. For example, depending on the patient's genes, the patient is either vulnerable or more resistant to cancer.
-
-### Priors and Likelihood:
-
-1.  **Priors**: We can use the flat priors for the coefficients and Student - T prior for each patient suggested by BRMS and then later test the prior sensitivity of the model.
-
-```{r}
-#Examine the default priors suggested
-get_prior(cancer ~ 1 + tob + alc + age + (1 | ID), 
-             data = train_data, 
-             family = bernoulli("logit"))
-```
-
-2.  **Likelihood**: The likelihood of observing the data given the parameters is modeled by a binomial distribution (for binary outcomes), which in the case of logistic regression simplifies to a product of Bernoulli trials.
-
-### BRMS code
-
-```{r}
-# Defining the ordinal logistic model
-model2 <- brm(cancer ~ 1 + tob + alc + age + (1 | ID), 
-             data = train_data, 
-             family = bernoulli("logit"),
-             prior = c(prior(normal(0, 10), class = "b"),
-                       prior(normal(0, 10), class = "Intercept")),
-             chains=4,
-             file="model2",
-             cores=4)
-```
-
-The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. This are mostly default settings but, as we show below, the MCMC chains converge well.
-
-### Convergence diagnostic
-
-```{r}
-summary(model2)
-```
-
-From the summary we can learn that our model estimation converged well: $\hat{R}$ \~ 1.00 and effective sample size greater than 100 times the number of chains (=4) for each parameter (Vehtari et al. 2021) [1].
-
-### Posterior predictive checks
-
-These first two plots are used for visualizing the overlay of posterior predictive densities on top of the observed data.
-
-```{r}
-pp_check(model2, newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
-```
-
-```{r}
-pp_check(model2, type="dens_overlay_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
-```
-
-The next two plots displays two bars representing the observed counts of the two outcomes, with overlaid bars from the simulated data.
-
-```{r}
-pp_check(model2, type="bars_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
-```
-
-The final two plots show the observed mean statistic and a distribution of the statistic computed from the simulated data set.
-
-```{r}
-pp_check(model2, type="stat_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
-```
-
-### Predictive performance assessments
-
-Now we will make predictions on the Test Set.
-
-```{r}
-#Get posterior predictions for the test set
-posterior_predict_model2 <- posterior_predict(model2, newdata=test_data, allow_new_levels=TRUE, sample_new_levels = "gaussian", cores=4)
-
-#Calculate the mean of the posterior predictions
-predicted_probabilities_model2 <- colMeans(posterior_predict_model2)
-
-predicted_classes_model2 <- ifelse(predicted_probabilities_model2 > 0.5, 1, 0)
-```
-
-We can then construct a confusion matrix by comparing predictions to the actual outcomes in the test set.
-
-**The Confusion Matrix:**
-
-```{r}
-#Actual classes in the test set
-actual_classes <- test_data$cancer
-
-#Create a confusion matrix
-conf_matrix_model2 <- table(Predicted = predicted_classes_model2, Actual = actual_classes)
-conf_matrix_df_model2 <- as.data.frame(as.table(conf_matrix_model2))
-
-conf_matrix_model2
-```
-
-```{r}
-# Rename the columns appropriately
-names(conf_matrix_df_model2) <- c("Predicted", "Actual", "Frequency")
-
-ggplot(conf_matrix_df_model2, aes(x = Predicted, y = Actual, fill = Frequency)) +
-    geom_tile() +
-    scale_fill_gradient(low = "white", high = "steelblue") +
-    theme_minimal() +
-    labs(x = "Predicted", y = "Actual", fill = "Count") +
-    coord_fixed()
-
-```
-
-```{r}
-
+```{r, echo=FALSE}
 true_positives_model2 <- conf_matrix_model2[2, 2]
 true_negatives_model2 <- conf_matrix_model2[1, 1]
 false_positives_model2 <- conf_matrix_model2[2, 1]
@@ -585,32 +663,35 @@ precision_model2 <- true_positives_model2 / (true_positives_model2 + false_posit
 recall_model2 <- true_positives_model2 / (true_positives_model2 + false_negatives_model2)
 f1_score_model2 <- 2 * (precision_model2 * recall_model2) / (precision_model2 + recall_model2)
 
+cat("Hierarchical model: \n")
 cat(sprintf("Accuracy:    %.1f\nPrecision:   %.1f\nRecall:      %.1f\nF1 Score:    %.1f", 
     accuracy_model2, precision_model2, recall_model2, f1_score_model2))
 ```
 
-**Accuracy**: Accuracy measures how often a classifier makes the correct prediction. It is the ratio of the number of correct predictions to the total number of predictions. The model's accuracy of 0.8 is decent.
+ - As we can see the performances of both models are practically the same in terms of classification accuracy.
+ 
+ - Recall (Sensitivity) scores of both models are pretty bad. Hence, the model should be improved before being deployed.
 
 # Model comparisons using ELPD
 
-```{r}
+```{r, echo=FALSE}
 loo1 <- loo::loo(model)
 loo2 <- loo::loo(model2)
 ```
 
-```{r}
+```{r, echo=FALSE}
 plot(loo1, label_points=TRUE)
 ```
 
 All Pareto $\hat{k}$ are smaller than 0.5. The distribution of raw importance rations has finite variance.
 
-```{r}
+```{r, echo=FALSE}
 plot(loo2, label_points=TRUE)
 ```
 
 We can see that almost all data points have Pareto $\hat{k}$ bigger than 0.7. It is due to our model having only one ID observation for each patient meaning that LOO cross validation does not provide a big insight.
 
-```{r}
+```{r, echo=FALSE}
 loo::loo_compare(loo1, loo2)
 ```
 
