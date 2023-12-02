@@ -239,7 +239,7 @@ get_prior(cancer ~ 1 + tob + alc + age,
 
 ### BRMS code
 
-```{r, include=FALSE}
+```{r, include=TRUE}
 # Defining the ordinal logistic model
 model <- brm(cancer ~ 1 + tob + alc + age, 
              data = train_data, 
@@ -256,7 +256,7 @@ The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. 
 
 ### Convergence diagnostic
 
-```{r, echo=FALSE, include=FALSE}
+```{r, echo=FALSE, include=TRUE}
 summary(model)
 ```
 
@@ -362,7 +362,7 @@ get_prior(cancer ~ 1 + tob + alc + age + (1 | ID),
 
 ### BRMS code
 
-```{r, include=FALSE}
+```{r, include=TRUE}
 # Defining the ordinal logistic model 
 model2 <- brm(cancer ~ 1 + tob + alc + age + (1 | ID),              
               data = train_data,               
@@ -379,7 +379,7 @@ The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. 
 
 ### Convergence diagnostic
 
-```{r, echo=FALSE, include=FALSE}
+```{r, echo=FALSE, include=TRUE}
 summary(model2)
 ```
 
