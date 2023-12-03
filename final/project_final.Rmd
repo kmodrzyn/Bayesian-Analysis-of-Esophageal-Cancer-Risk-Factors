@@ -4,14 +4,19 @@ output:
   pdf_document:
     fig_width: 6
     fig_height: 4
+    toc: true
+    toc_depth: 2
+    number_sections: true
   html_document: default
-date: "2023-11-29"
+date: "November-2023"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 ```
+
+\newpage
 
 # Introduction
 
@@ -74,7 +79,7 @@ The data set contains the following columns:
 
 7.  **`prob`**: Empirical probability
 
-# Visualization
+## Explanatory variables analysis
 
 **Empirical Probabilities by Age Group**: This chart shows the empirical probabilities across different age groups.
 
@@ -136,12 +141,10 @@ p3 <- ggplot(data_tob, aes(x = tobgp, y = Probability)) +
            y = "Probability") +
       theme_minimal()
 
-# Combine the plots
-grid.arrange(p1, p2, p3, ncol = 1)
-
+grid.arrange(p1, p2, p3, ncol=1)
 ```
 
-# Data pre-processing
+## Feature engineering/Data processing
 
 Transform the original data set into a new data set suitable for Bernoulli fit:
 
@@ -194,7 +197,7 @@ new_df$tob <- factor(new_df$tob, ordered=TRUE)
 new_df$alc <- factor(new_df$alc, ordered=TRUE)
 ```
 
-# Split the Data
+## Splitting the Data
 
 We will split the Data into Training and Test Sets using the function split(). The **`SplitRatio = 0.7`** argument of the function indicates that approximately 70% of the data should be allocated to the training set, and the remaining 30% in the test set.
 
@@ -208,19 +211,23 @@ test_data <- subset(new_df, data_split == FALSE)
 
 The motivation of the project is to model the probability of having cancer based on several explanatory variables: age, tobacco usage, and alcohol consumption. The response variable (cancer occurrence) is binary, where '1' indicates the presence of cancer and '0' indicates its absence.
 
-### Mathematical Notation:
+## Mathematical Notation:
 
 The logistic regression model can be expressed as follows:
 
 $$ \text{logit}(P(Y=1)) = \log\left(\frac{P(Y=1)}{1 - P(Y=1)}\right) = \beta_0 + \beta_1X_1 + \beta_2X_2 + \cdots + \beta_kX_k $$
 
-Where: - $P(Y=1)$ is the probability of having cancer.
+Where: 
 
--   $\beta_0$ is the intercept. - $\beta_1, \beta_2, \cdots, \beta_k$ are the coefficients for the explanatory variables $X_1, X_2, \cdots, X_k$ (age, tobacco, and alcohol consumption in your case). These parameter estimate will show the change in the log-odds of the outcome when the variable changes from its reference level (usually 0) to the other level. In practical terms, this parameter tells us the difference in the log-odds of the probability of having cancer.
+- $P(Y=1)$ is the probability of having cancer.
+
+- $\beta_0$ is the intercept. 
+
+- $\beta_1, \beta_2, \cdots, \beta_k$ are the coefficients for the explanatory variables $X_1, X_2, \cdots, X_k$ (age, tobacco, and alcohol consumption in your case). These parameter estimate will show the change in the log-odds of the outcome when the variable changes from its reference level (usually 0) to the other level. In practical terms, this parameter tells us the difference in the log-odds of the probability of having cancer.
 
 # Pooled ordinal logistic regression model
 
-### Priors and Likelihood:
+## Priors and Likelihood:
 
 1.  **Priors**:
 
@@ -237,7 +244,7 @@ get_prior(cancer ~ 1 + tob + alc + age,
 
 2.  **Likelihood**: The likelihood of observing the data given the parameters is modeled by a binomial distribution (for binary outcomes), which in the case of logistic regression simplifies to a product of Bernoulli trials.
 
-### BRMS code
+## BRMS code
 
 ```{r, include=TRUE}
 # Defining the ordinal logistic model
@@ -254,7 +261,7 @@ model <- brm(cancer ~ 1 + tob + alc + age,
 
 The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. This are mostly default settings but, as we show below, the MCMC chains converge well.
 
-### Convergence diagnostic
+## Convergence diagnostic
 
 ```{r, echo=FALSE, include=TRUE}
 summary(model)
@@ -270,7 +277,7 @@ cat(sprintf("Number of divergence of the transitions: %i", sum(subset(np1, Param
 
 Zero divergences indicates that the posterior distribution has been explored by the HMC algorithm.
 
-### Sensitivity Analysis with respect to Priors
+## Sensitivity Analysis with respect to Priors
 
 This time let use the default priors suggested by BRMS model.
 
@@ -290,7 +297,7 @@ posterior_samples_model1 <- as_draws(model)
 posterior_samples_model1_alt <- as_draws(model1_alt)
 ```
 
-**Posterior of Tobacco's coefficient parameters:**
+**Marginal posterior of Tobacco's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_tob_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
@@ -307,7 +314,7 @@ posterior_tob_model1_alt <- mcmc_areas(posterior_samples_model1_alt, pars = c("b
 grid.arrange(posterior_tob_model1, posterior_tob_model1_alt, ncol = 2)
 ```
 
-**Posterior of Alcohol's coefficient parameters:**
+**Marginal posterior of Alcohol's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_alc_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
@@ -324,7 +331,7 @@ posterior_alc_model1_alt <- mcmc_areas(posterior_samples_model1_alt, pars = c("b
 grid.arrange(posterior_alc_model1, posterior_alc_model1_alt, ncol = 2)
 ```
 
-**Posterior of Age's coefficient parameters:**
+**Marginal posterior of Age's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_age_model1 <- mcmc_areas(posterior_samples_model1, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
@@ -347,7 +354,7 @@ In conclusion, we can say that the model is rather indifferent to prior choices 
 
 In the hierarchical model, we will assume that each patient will inherently have a distinct tendency to have cancer, accounting for patient-level variation. For example, depending on the patient's genes, the patient is either vulnerable or more resistant to cancer.
 
-### Priors and Likelihood:
+## Priors and Likelihood:
 
 1.  **Priors**: We can reuse the priors in the Pooled Model as well as priors suggested by BRMS, then test the Model's sensitivity to priors.
 
@@ -360,7 +367,7 @@ get_prior(cancer ~ 1 + tob + alc + age + (1 | ID),
 
 2.  **Likelihood**: We will reuse the Bernoulli family as in the Pooled Model.
 
-### BRMS code
+## BRMS code
 
 ```{r, include=TRUE}
 # Defining the ordinal logistic model 
@@ -377,7 +384,7 @@ model2 <- brm(cancer ~ 1 + tob + alc + age + (1 | ID),
 
 The model uses 4 chains, each with 2000 iterations. The warm-up length is 1000. This are mostly default settings but, as we show below, the MCMC chains converge well.
 
-### Convergence diagnostic
+## Convergence diagnostic
 
 ```{r, echo=FALSE, include=TRUE}
 summary(model2)
@@ -393,7 +400,7 @@ cat(sprintf("Number of divergence of the transitions: %i", sum(subset(np2, Param
 
 Zero divergences indicates that the posterior distribution has been explored by the HMC algorithm.
 
-### Sensitivity Analysis with respect to Priors
+## Sensitivity Analysis with respect to Priors
 
 This time let use the default priors suggested by BRMS model.
 
@@ -413,7 +420,7 @@ posterior_samples_model2 <- as_draws(model2)
 posterior_samples_model2_alt <- as_draws(model2_alt)
 ```
 
-**Posterior of Tobacco's coefficient parameters:**
+**Marginal posterior of Tobacco's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_tob_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_tob.L", "b_tob.Q", "b_tob.C")) + 
@@ -430,7 +437,7 @@ posterior_tob_model2_alt <- mcmc_areas(posterior_samples_model2_alt, pars = c("b
 grid.arrange(posterior_tob_model2, posterior_tob_model2_alt, ncol = 2)
 ```
 
-**Posterior of Alcohol's coefficient parameters:**
+**Marginal posterior of Alcohol's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_alc_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_alc.L", "b_alc.Q", "b_alc.C")) + 
@@ -447,7 +454,7 @@ posterior_alc_model2_alt <- mcmc_areas(posterior_samples_model2_alt, pars = c("b
 grid.arrange(posterior_alc_model2, posterior_alc_model2_alt, ncol = 2)
 ```
 
-**Posterior of Age's coefficient parameters:**
+**Marginal posterior of Age's coefficient parameters:**
 
 ```{r, echo=FALSE, include=FALSE}
 posterior_age_model2 <- mcmc_areas(posterior_samples_model2, pars = c("b_age.L", "b_age.Q", "b_age.C", "b_ageE4", "b_ageE5")) + 
@@ -547,7 +554,7 @@ pp_bar_grouped_model_2
 
 The final three plots show the observed mean statistic and a distribution of the statistic computed from the simulated data set.
 
-```{r, echo=FALSE, include=FALSE}
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE, results='hide'}
 p_stat1 <- pp_check(model, type="stat", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
@@ -559,25 +566,25 @@ p_stat2 <- pp_check(model2, type="stat",
   ggplot2::xlab("Hierarchical model")
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 grid.arrange(p_stat1, p_stat2)
 ```
 
-```{r, echo=FALSE, include=FALSE}
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE, results='hide'}
 pp_stat_grouped_model_1 <- pp_check(model, type="stat_grouped", group="age", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 pp_stat_grouped_model_1
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
 pp_stat_grouped_model_2 <- pp_check(model2, type="stat_grouped", group="age", newdata = test_data, allow_new_levels=TRUE, sample_new_levels="gaussian")
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 pp_stat_grouped_model_2
 ```
 
@@ -1132,7 +1139,7 @@ pp_bar_grouped_model_2 <- pp_check(model2, type="bars_grouped", group="age",
 pp_bar_grouped_model_2
 ```
 
-```{r, eval = FALSE}
+```{r, eval = FALSE, warning=FALSE, message=FALSE, results='hide'}
 p_stat1 <- pp_check(model, type="stat", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
@@ -1148,7 +1155,7 @@ p_stat2 <- pp_check(model2, type="stat",
 grid.arrange(p_stat1, p_stat2)
 ```
 
-```{r, eval = FALSE}
+```{r, eval = FALSE, warning=FALSE, message=FALSE, results='hide'}
 pp_stat_grouped_model_1 <- pp_check(model, type="stat_grouped", group="age", newdata = test_data) + 
   xaxis_title() + 
   ggplot2::xlab("Pooled model")
