@@ -1,4 +1,4 @@
-# Bayesian Hierarchical Analysis of Esophageal Cancer Risk Factors: Evaluating the Role of Age, Tobacco, and Alcohol Consumption
+# Bayesian Analysis of Esophageal Cancer Risk Factors: Evaluating the Role of Age, Tobacco, and Alcohol Consumption
 Course project for CS-E5710 - Bayesian Data Analysis D
 
 Modeling the likelihood of developing Esophageal Cancer from a Bayesian perspective
